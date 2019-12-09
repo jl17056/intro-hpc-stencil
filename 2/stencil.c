@@ -8,7 +8,7 @@
 #define OUTPUT_FILE "stencil.pgm"
 #define MASTER 0
 
-void stencil(const int nx, const int ny, const int width, const int height,
+void stencil(const int local_nrows, const int local_ncols, const int width, const int height,
              float* image, float* tmp_image);
 void init_image(const int nx, const int ny, const int width, const int height,
                 float* image, float* tmp_image);
@@ -21,6 +21,17 @@ int calc_nrows(int rank, int size, int nx);
 int main(int argc, char* argv[])
 {
 
+  // Check usage
+  if (argc != 4) {
+    fprintf(stderr, "Usage: %s nx ny niters\n", argv[0]);
+    exit(EXIT_FAILURE);
+  }
+
+  // Initiliase problem dimensions from command line arguments
+  int nx = atoi(argv[1]);
+  int ny = atoi(argv[2]);
+  int niters = atoi(argv[3]);
+
   int rank;              /* the rank of this process */
   int up;              /* the rank of the process to the left */
   int down;             /* the rank of the process to the right */
@@ -30,11 +41,10 @@ int main(int argc, char* argv[])
   int local_nrows;       /* number of rows apportioned to this rank */
   int local_ncols;       /* number of columns apportioned to this rank */
 
-  // Check usage
-  if (argc != 4) {
-    fprintf(stderr, "Usage: %s nx ny niters\n", argv[0]);
-    exit(EXIT_FAILURE);
-  }
+  // we pad the outer edge of the image to avoid out of range address issues in
+  // stencil
+  int width = nx + 2;
+  int height = ny + 2;
 
   /*
   ** MPI_Init returns once it has started up processes
@@ -51,15 +61,8 @@ int main(int argc, char* argv[])
   up = (rank == MASTER) ? (rank + size - 1) : (rank - 1);
   down = (rank + 1) % size;
 
-  // Initiliase problem dimensions from command line arguments
-  int nx = atoi(argv[1]);
-  int ny = atoi(argv[2]);
-  int niters = atoi(argv[3]);
-
-  // we pad the outer edge of the image to avoid out of range address issues in
-  // stencil
-  int width = nx + 2;
-  int height = ny + 2;
+  if(rank == MASTER) up = MPI_PROC_NULL;
+  if(rank == size - 1) down = MPI_PROC_NULL;
 
   /*
   ** determine local grid size
@@ -79,64 +82,55 @@ int main(int argc, char* argv[])
   // Set the input image
   init_image(nx, ny, width, height, image, tmp_image);
 
-  printf("init image done\n");
-
   // Allocate local image
-  float* local = malloc(sizeof(float) * (local_ncols + 2) * (local_nrows + 2));
-  float* tmp_local = malloc(sizeof(float) * (local_ncols + 2) * (local_nrows + 2));
+  float* local = malloc(sizeof(float) * (local_nrows + 2) * (local_ncols + 2));
+  float* tmp_local = malloc(sizeof(float) * (local_nrows + 2) * (local_ncols + 2));
 
   //Initialise local tmp_image
   int step = floor(nx/size);
   for (int i = 0; i < local_nrows + 2; i++) {
     for (int j = 0; j < local_ncols + 2; j++) {
       if (j > 0 && j < (local_ncols + 1) && i > 0 && i < (local_nrows + 1)) {
-	       local[j + i * (local_ncols + 2)] = image[(j + i * width + (step * rank * width))];
-         tmp_local[j + i * (local_ncols + 2)] = image[(j + i * width + (step * rank * width))];
+           local[i * (local_ncols + 2) + j] = image[(j + i * width + (step * rank * width))];
+         tmp_local[i * (local_ncols + 2) + j] = image[(j + i * width + (step * rank * width))];
        }               /* core cells */
       else {
-	       local[j + i * (local_ncols + 2)] = 0.0f;
-         tmp_local[j + i * (local_ncols + 2)] = 0.0f;
+           local[i * (local_ncols + 2) + j] = 0.0f;
+         tmp_local[i * (local_ncols + 2) + j] = 0.0f;
        }                      /* halo cells */
     }
   }
-
-  printf("init local image done for rank = %d\n", rank);
 
   // Call the stencil kernel
   double tic = wtime();
   for (int t = 0; t < niters; ++t) {
 
     //Halo exchange for local
-    //Send up, receive down
-    MPI_Sendrecv(&local[(local_ncols + 2) + 1], local_ncols, MPI_FLOAT, up, tag,
-      &local[(local_nrows + 1) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, tag, MPI_COMM_WORLD, &status);
-    //Send down, receive up
-    MPI_Sendrecv(&local[(local_nrows) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, tag,
-      &local[1], local_ncols, MPI_FLOAT, up, tag, MPI_COMM_WORLD, &status);
+    // Sending to up first then receive to the down
+    MPI_Sendrecv(&local[(local_ncols + 2) + 1], local_ncols, MPI_FLOAT, up, 0, &local[(local_nrows + 1) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, 0, MPI_COMM_WORLD, &status);
 
-    printf("send recv for local done in rank = %d\n", rank);
+    // Send to down then receive from up
+    MPI_Sendrecv(&local[local_nrows * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, 0, &local[1], local_ncols, MPI_FLOAT, up, 0, MPI_COMM_WORLD, &status);
 
     stencil(local_nrows, local_ncols, width, height, local, tmp_local);
 
     //Halo exchange for temp
-    //Send up, receive down
-    MPI_Sendrecv(&tmp_local[(local_ncols + 2) + 1], local_ncols, MPI_FLOAT, up, tag,
-      &tmp_local[(local_nrows + 1) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, tag, MPI_COMM_WORLD, &status);
-    //Send down, receive up
-    MPI_Sendrecv(&tmp_local[(local_nrows) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, tag,
-      &tmp_local[1], local_ncols, MPI_FLOAT, up, tag, MPI_COMM_WORLD, &status);
-    printf("send recv done for tmp_local in rank = %d\n", rank);
-stencil(local_nrows, local_ncols, width, height, tmp_local, local);
-  }
+    // Sending to up first then receive to the down
+    MPI_Sendrecv(&tmp_local[(local_ncols + 2) + 1], local_ncols, MPI_FLOAT, up, 0, &tmp_local[(local_nrows + 1) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, 0, MPI_COMM_WORLD, &status);
 
+    // Send to down then receive from up
+    MPI_Sendrecv(&tmp_local[local_nrows * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, 0, &tmp_local[1], local_ncols, MPI_FLOAT, up, 0, MPI_COMM_WORLD, &status);
+
+    stencil(local_nrows, local_ncols, width, height, tmp_local, local);
+  }
   double toc = wtime();
-	
+
   printf("a\n");
 
   if (rank == MASTER) {
     for (int i = 1; i < local_nrows + 1; i++) {
       for (int j = 1; j < local_ncols + 1; j++) {
-        image[j + i * (width)] = local[j + i * (local_ncols + 2)];
+        image[j + (i * width)] = local[j + i * (local_ncols + 2)];
       }
     }
     for (int r = 1; r < size; r++) {
@@ -175,9 +169,9 @@ stencil(local_nrows, local_ncols, width, height, tmp_local, local);
 void stencil(const int local_nrows, const int local_ncols, const int width, const int height,
              float* image, float* tmp_image)
 {
-  for (int i = 1; i < ny + 1; ++i) {
-    for (int j = 1; j < nx + 1; ++j) {
-	     int temp = j + i * (local_ncols + 2);
+  for (int i = 1; i < local_nrows + 1; ++i) {
+    for (int j = 1; j < local_ncols + 1; ++j) {
+         int temp = j + i * (local_ncols + 2);
        tmp_image[temp] = image[temp] * 0.6f + 0.1f * (image[temp - (local_ncols + 2)] + image[temp + (local_ncols + 2)] + image[temp - 1] + image[temp + 1]);
     }
   }
