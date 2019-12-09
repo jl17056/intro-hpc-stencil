@@ -233,3 +233,5 @@ int calc_nrows(int rank, int size, int nx)
   }
 
   return nrows;
+
+}
