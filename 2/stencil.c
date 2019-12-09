@@ -5,6 +5,7 @@
 
 // Define output file name
 #define OUTPUT_FILE "stencil.pgm"
+#define MASTER 0
 
 void stencil(const int nx, const int ny, const int width, const int height,
              float* image, float* tmp_image);
@@ -14,7 +15,7 @@ void output_image(const char* file_name, const int nx, const int ny,
                   const int width, const int height, float* image);
 double  wtime(void);
 
-int calc_nrows(int rank, int size);
+int calc_nrows(int rank, int size, int nx);
 
 int main(int argc, char* argv[])
 {
