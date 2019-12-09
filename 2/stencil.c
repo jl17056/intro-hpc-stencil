@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include "mpi.h"
+#include <math.h>
 
 // Define output file name
 #define OUTPUT_FILE "stencil.pgm"
@@ -85,12 +86,12 @@ int main(int argc, char* argv[])
   float* tmp_local = malloc(sizeof(float) * (local_ncols + 2) * (local_nrows + 2));
 
   //Initialise local tmp_image
-  int step = nx/size;
+  int step = floor(nx/size);
   for (int i = 0; i < local_nrows + 2; i++) {
     for (int j = 0; j < local_ncols + 2; j++) {
-      if (j > 0 && j < (local_ncols + 1) && i > 0 && i < local_nrows + 1) {
-	       local[j + i * (local_ncols + 2)] = image[j + (i * width) + (step * rank * width)];
-         tmp_local[j + i * (local_ncols + 2)] = image[j + (i * width) + (step * rank * width)];
+      if (j > 0 && j < (local_ncols + 1) && i > 0 && i < (local_nrows + 1)) {
+	       local[j + i * (local_ncols + 2)] = image[(j + i * width + (step * rank * width))];
+         tmp_local[j + i * (local_ncols + 2)] = image[(j + i * width + (step * rank * width))];
        }               /* core cells */
       else {
 	       local[j + i * (local_ncols + 2)] = 0.0f;
@@ -107,7 +108,7 @@ int main(int argc, char* argv[])
 
     //Halo exchange for local
     //Send up, receive down
-    MPI_Sendrecv(&local[local_ncols + 2 + 1], local_ncols, MPI_FLOAT, up, tag,
+    MPI_Sendrecv(&local[(local_ncols + 2) + 1], local_ncols, MPI_FLOAT, up, tag,
       &local[(local_nrows + 1) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, tag, MPI_COMM_WORLD, &status);
     //Send down, receive up
     MPI_Sendrecv(&local[(local_nrows) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, tag,
@@ -119,15 +120,18 @@ int main(int argc, char* argv[])
 
     //Halo exchange for temp
     //Send up, receive down
-    MPI_Sendrecv(&tmp_local[local_ncols + 2 + 1], local_ncols, MPI_FLOAT, up, tag,
+    MPI_Sendrecv(&tmp_local[(local_ncols + 2) + 1], local_ncols, MPI_FLOAT, up, tag,
       &tmp_local[(local_nrows + 1) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, tag, MPI_COMM_WORLD, &status);
     //Send down, receive up
     MPI_Sendrecv(&tmp_local[(local_nrows) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, tag,
       &tmp_local[1], local_ncols, MPI_FLOAT, up, tag, MPI_COMM_WORLD, &status);
-    stencil(local_nrows, local_ncols, width, height, tmp_local, local);
+    printf("send recv done for tmp_local in rank = %d\n", rank);
+stencil(local_nrows, local_ncols, width, height, tmp_local, local);
   }
 
   double toc = wtime();
+	
+  printf("a\n");
 
   if (rank == MASTER) {
     for (int i = 1; i < local_nrows + 1; i++) {
@@ -168,13 +172,13 @@ int main(int argc, char* argv[])
 
 }
 
-void stencil(const int nx, const int ny, const int width, const int height,
+void stencil(const int local_nrows, const int local_ncols, const int width, const int height,
              float* image, float* tmp_image)
 {
   for (int i = 1; i < ny + 1; ++i) {
     for (int j = 1; j < nx + 1; ++j) {
-	     int temp = j + i * (ny + 2);
-       tmp_image[temp] = image[temp] * 0.6f + 0.1f * (image[temp - (ny + 2)] + image[temp + (ny + 2)] + image[temp - 1] + image[temp + 1]);
+	     int temp = j + i * (local_ncols + 2);
+       tmp_image[temp] = image[temp] * 0.6f + 0.1f * (image[temp - (local_ncols + 2)] + image[temp + (local_ncols + 2)] + image[temp - 1] + image[temp + 1]);
     }
   }
 }
