@@ -126,9 +126,31 @@ int main(int argc, char* argv[])
       &tmp_local[1], local_ncols, MPI_FLOAT, up, tag, MPI_COMM_WORLD, &status);
     stencil(local_nrows, local_ncols, width, height, tmp_local, local);
   }
+
   double toc = wtime();
 
-  if (rank == 0) {
+  if (rank == MASTER) {
+    for (int i = 1; i < local_nrows + 1; i++) {
+      for (int j = 1; j < local_ncols + 1; j++) {
+        image[j + i * (width)] = local[j + i * (local_ncols + 2)];
+      }
+    }
+    for (int r = 1; r < size; r++) {
+      int offset = r * local_nrows;
+      int nrows = calc_nrows(r, size, nx);
+      for (int i = 1; i < nrows + 1; i++) {
+        MPI_Recv(&image[(offset + i) * width + 1], local_ncols, MPI_FLOAT, r, tag, MPI_COMM_WORLD, &status);
+      }
+    }
+  }
+
+  else {
+    for (int i = 1; i < local_nrows + 1; i++) {
+      MPI_Send(&local[i * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, r, tag, MPI_COMM_WORLD);
+    }
+  }
+
+  if (rank == MASTER) {
     // Output
     printf("------------------------------------\n");
     printf(" runtime: %lf s\n", toc - tic);
