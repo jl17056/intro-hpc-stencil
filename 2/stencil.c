@@ -146,7 +146,7 @@ int main(int argc, char* argv[])
 
   else {
     for (int i = 1; i < local_nrows + 1; i++) {
-      MPI_Send(&local[i * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, r, tag, MPI_COMM_WORLD);
+      MPI_Send(&local[i * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, MASTER, tag, MPI_COMM_WORLD);
     }
   }
 
