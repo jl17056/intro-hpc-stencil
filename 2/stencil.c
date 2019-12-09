@@ -78,6 +78,8 @@ int main(int argc, char* argv[])
   // Set the input image
   init_image(nx, ny, width, height, image, tmp_image);
 
+  printf("init image done\n");
+
   // Allocate local image
   float* local = malloc(sizeof(float) * (local_ncols + 2) * (local_nrows + 2));
   float* tmp_local = malloc(sizeof(float) * (local_ncols + 2) * (local_nrows + 2));
@@ -90,12 +92,14 @@ int main(int argc, char* argv[])
 	       local[j + i * (local_ncols + 2)] = image[j + (i * width) + (step * rank * width)];
          tmp_local[j + i * (local_ncols + 2)] = image[j + (i * width) + (step * rank * width)];
        }               /* core cells */
-      else if (j == 0 || j == (local_ncols + 1)) {
+      else {
 	       local[j + i * (local_ncols + 2)] = 0.0f;
          tmp_local[j + i * (local_ncols + 2)] = 0.0f;
        }                      /* halo cells */
     }
   }
+
+  printf("init local image done for rank = %d\n", rank);
 
   // Call the stencil kernel
   double tic = wtime();
@@ -108,7 +112,10 @@ int main(int argc, char* argv[])
     //Send down, receive up
     MPI_Sendrecv(&local[(local_nrows) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, tag,
       &local[1], local_ncols, MPI_FLOAT, up, tag, MPI_COMM_WORLD, &status);
-    stencil(nx, ny, width, height, local, tmp_local);
+
+    printf("send recv for local done in rank = %d\n", rank);
+
+    stencil(local_nrows, local_ncols, width, height, local, tmp_local);
 
     //Halo exchange for temp
     //Send up, receive down
@@ -117,7 +124,7 @@ int main(int argc, char* argv[])
     //Send down, receive up
     MPI_Sendrecv(&tmp_local[(local_nrows) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, tag,
       &tmp_local[1], local_ncols, MPI_FLOAT, up, tag, MPI_COMM_WORLD, &status);
-    stencil(nx, ny, width, height, tmp_local, local);
+    stencil(local_nrows, local_ncols, width, height, tmp_local, local);
   }
   double toc = wtime();
 
