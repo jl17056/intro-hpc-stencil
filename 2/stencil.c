@@ -108,19 +108,15 @@ int main(int argc, char* argv[])
     //Halo exchange for local
     // Sending to up first then receive to the down
     MPI_Sendrecv(&local[(local_ncols + 2) + 1], local_ncols, MPI_FLOAT, up, 0, &local[(local_nrows + 1) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, 0, MPI_COMM_WORLD, &status);
-
     // Send to down then receive from up
     MPI_Sendrecv(&local[local_nrows * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, 0, &local[1], local_ncols, MPI_FLOAT, up, 0, MPI_COMM_WORLD, &status);
-
     stencil(local_nrows, local_ncols, width, height, local, tmp_local);
 
     //Halo exchange for temp
     // Sending to up first then receive to the down
     MPI_Sendrecv(&tmp_local[(local_ncols + 2) + 1], local_ncols, MPI_FLOAT, up, 0, &tmp_local[(local_nrows + 1) * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, 0, MPI_COMM_WORLD, &status);
-
     // Send to down then receive from up
     MPI_Sendrecv(&tmp_local[local_nrows * (local_ncols + 2) + 1], local_ncols, MPI_FLOAT, down, 0, &tmp_local[1], local_ncols, MPI_FLOAT, up, 0, MPI_COMM_WORLD, &status);
-
     stencil(local_nrows, local_ncols, width, height, tmp_local, local);
   }
   double toc = wtime();
