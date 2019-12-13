@@ -121,8 +121,6 @@ int main(int argc, char* argv[])
   }
   double toc = wtime();
 
-  printf("a\n");
-
   if (rank == MASTER) {
     for (int i = 1; i < local_nrows + 1; i++) {
       for (int j = 1; j < local_ncols + 1; j++) {
